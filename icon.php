@@ -69,6 +69,47 @@ class Icon {
 	}	//	function createFromString
 	
 	
+	
+	public function getImage($minWidth=16, $minBitcount=8, $maxWidth=256, $maxBitcount=null) {
+		$qualifyingImages = array();
+		foreach($this->images as &$image) {
+			if (
+				$image->width >= $minWidth and
+				$image->bitcount >= $minBitcount and
+				$image->width <= $maxWidth and
+				$image->bitcount <= $maxBitcount
+			) {
+				$qualifyingImages[] = $image;
+			}
+		}
+		if (0 == count($qualifyingImages)) {
+		//	No qualifying images found.
+			return false;
+		}
+		if (1 == count($qualifyingImages)) {
+		//	One qualifying image found.
+			return $qualifyingImages[0];
+		}
+	//	Multiple qualifying images found.
+	//	return the best quality one.
+		$bestImage = $qualifyingImages[0];
+		foreach($qualifyingImages as &$image) {
+			if ($image->bitcount > $bestImage->bitcount) {
+			//	Higher bitcount.
+				$bestImage = $image;
+			}
+			elseif ($image->width > $bestImage->width) {
+			//	Better resolution
+				$bestImage = $image;
+			}
+		}
+	//	Return the best image
+		return $bestImage;
+	}	//	function getIcon
+	
+	
+	
+	
 }	//	class Icon
 
 

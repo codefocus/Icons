@@ -104,17 +104,22 @@ class IconImage {
 			}
 		//	AND (mask) data
 		//	for transparency
-			$andMaskData = substr($data, $image->size + $sizePixels, $sizeAndMask);
-			$andBits = '';
+			$andMaskData	= substr($data, $image->size + $sizePixels, $sizeAndMask);
+			$andBits		= '';
 			for($idx_mask_byte = 0; $idx_mask_byte < $sizeAndMask; ++$idx_mask_byte) {
 				$andBits .= str_pad(decbin(ord($andMaskData[$idx_mask_byte])), 8, '0', STR_PAD_LEFT);
 			}
-			$image->andmask = str_split(strrev($andBits), $andMaskWidth);
-			if ($andMaskWidth != $icondirentry->width) {
-				foreach($image->andmask as &$andMaskLine) {
-					$andMaskLine = strrev(substr($andMaskLine, $icondirentry->width));
-				}
+		//	Trim off useless bits
+			$andMaskLines = str_split($andBits, $andMaskWidth);
+			foreach($andMaskLines as &$andMaskLine) {
+				$andMaskLine = substr($andMaskLine, 0, $icondirentry->width);
 			}
+		//	Draw bottom up if BITMAPINFO $height is positive
+			if ($image->height > 0) {
+				$andMaskLines = array_reverse($andMaskLines);
+			}
+			
+			$image->andmask = $andMaskLines;
 			
 /*
 			$image->render();
@@ -126,6 +131,7 @@ class IconImage {
 		//	24 bit color
 		//	-----------------
 		//	Get image data
+			throw new \Exception('@TODO: createFromIconDirEntry 24-bit');
 			$image->pixels = $image->dataToRgbQuads(substr($data, $image->size), $image->bitcount);
 			$image->render();
 			exit();
@@ -140,8 +146,6 @@ class IconImage {
 		case 4:
 		//	Palettized image.
 		//	-----------------
-			//echo 'yep';
-			//exit();
 			if ($icondirentry->colorcount == 0) {
 			//	4 and 8-bit images with a colorcount of "0" have 256 colors.
 				$icondirentry->colorcount = 256;
@@ -152,12 +156,12 @@ class IconImage {
 			//	Get image data
 				$image->pixels = $image->dataToPaletteEntries(substr($data, $image->size + count($image->palette) * 4), $image->palette);
 			}
-			//$image->render();
 			break;
 			
 		case 1:
-			throw new \Exception('@TODO: 1-bit images not yet supported');
+			throw new \Exception('@TODO: createFromIconDirEntry 1-bit');
 			exit();
+/*
 		//	Black and white
 			$icodata = substr($data, $icondirentry->imageoffset + $image->size, $icondirentry->colorcount * 4);
 			
@@ -175,6 +179,7 @@ class IconImage {
 			);
 			$length = $image->width * $image->height / 8;
 			$icondirentry['data'] = substr($data, $icondirentry->imageoffset + $image->size + 8, $length);
+*/
 			break;
 			
 		}	//	switch bitcount
@@ -190,22 +195,13 @@ class IconImage {
 	 */
 	protected function dataToRgbQuads($data, $bitcount) {
 	//	Unpack data
-		$data_array	= unpack('C*', $data);
+		$data_array		= unpack('C*', $data);
 	//	Convert raw data to an array of RGB quads
 		$rgbquads		= array();
 		$sizeof_data	= count($data_array);
 		
-		if (24 == $bitcount) {
-		//	24 bit
-			for($cursor = 0; $cursor <= $sizeof_data - 3; $cursor += 3) {
-				$rgba = array();
-				list($rgba['b'], $rgba['g'], $rgba['r']) = array_slice($data_array, $cursor, 3);
-			//	Alpha is 1
-				$rgba['a'] = 1;
-				$rgbquads[] = $rgba;
-			}
-		}
-		else {
+		switch($bitcount) {
+		case 32:
 		//	32 bit
 			for($cursor = 0; $cursor <= $sizeof_data - 4; $cursor += 4) {
 				$rgba = array();
@@ -214,8 +210,37 @@ class IconImage {
 				$rgba['a'] = floor(128 - ($rgba['a'] / 2));
 				$rgbquads[] = $rgba;
 			}
-		}
-		//echo '<pre style="text-align: left; background-color: #fff; color: #444; border: 1px solid #ccc;">'.print_r($rgbquads, true).'</pre>';
+			break;
+			
+		case 24:
+		//	24 bit
+			for($cursor = 0; $cursor <= $sizeof_data - 3; $cursor += 3) {
+				$rgba = array();
+				list($rgba['b'], $rgba['g'], $rgba['r']) = array_slice($data_array, $cursor, 3);
+			//	Alpha is 1
+			//	@TODO
+				$rgba['a'] = 1;
+				$rgbquads[] = $rgba;
+			}
+			break;
+			
+		case 8:
+			throw new \Exception('@TODO: 8-bit images');
+			break;
+			
+		case 4:
+			throw new \Exception('@TODO: 4-bit images');
+			break;
+		
+		case 1:
+		default:
+			throw new \Exception('1 bit images not supported');
+			break;
+			
+			
+			
+		}	//	switch bitcount
+		
 		return $rgbquads;
 	}	//	function dataToRgbQuads
 	
@@ -296,15 +321,13 @@ class IconImage {
 	 *	Render the image
 	 *	
 	 */
-	public function render() {
-		header('Content-type: image/png');
-		
+	public function renderPng($filename = null) {
 	//	Create image
 		$gdimage = imagecreatetruecolor($this->icondirentry->width, $this->icondirentry->height);
 		imagesavealpha($gdimage, true);
 		
 	//	Fill with transparent color
-		$transparent = imagecolorallocatealpha($gdimage, 0, 0, 0,127);
+		$transparent = imagecolorallocatealpha($gdimage, 0, 0, 0, 127);
 		imagefill($gdimage, 0, 0, $transparent);
 		
 		if ($this->icondirentry->colorcount) {
@@ -317,13 +340,12 @@ class IconImage {
 		
 	//	Draw pixels
 	//	Build DIB bottom-to-top
-		//$this->pixels
 		$idx_pixel = 0;
-		for ($y = $this->icondirentry->height - 1; $y >= 0; --$y) {
-			for ($x = 0; $x < $this->icondirentry->width; ++$x) {
+		for ($y = $this->icondirentry->height - 1; $y >= 0; --$y) {	//	bottom up if $height positive
+			for ($x = 0; $x < $this->icondirentry->width; ++$x) {	//	left to right
 				
 				
-				if (!empty($this->andmask) and '1' == $this->andmask[$y][$x]) {
+				if (!empty($this->andmask) and !empty($this->andmask[$y][$x]) and '1' == $this->andmask[$y][$x]) {
 					++$idx_pixel;
 					continue;
 				}
@@ -351,15 +373,19 @@ class IconImage {
 			}	//	x
 		}	//	y
 
-		
-		imagepng($gdimage);
-		exit();
-		
-		
-		
-		
-		
-		
+		if ($filename) {
+		//	Save to file
+			imagepng($gdimage, $filename, 9);
+			return true;
+		}
+		else {
+		//	Return png data
+			ob_start();
+			imagepng($gdimage, null, 9);
+			$data = ob_get_contents();
+			ob_end_clean();
+			return $data;
+		}
 	}	//	function render
 	
 	
