@@ -37,7 +37,7 @@ class Icon {
 	 */
 	public static function createFromFile($filename) {
 		if (!file_exists($filename)) {
-			throw new Exception('File does not exist: '.basename($filename));
+			throw new \Exception('File does not exist: '.basename($filename));
 		}
 		$data = file_get_contents($filename);
 		return self::createFromString($data);

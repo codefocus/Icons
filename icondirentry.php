@@ -50,7 +50,7 @@ class IconDirEntry {
 			$icondirentrydata		= unpack('Cwidth/Cheight/Ccolorcount/Creserved/vplanes/vbitcount/Vbytesinresource/Vimageoffset', $icondirentrydata);
 			if (0 !== $icondirentrydata['reserved']) {
 			//	Reserved must be 0
-				throw new Exception('Not a valid icon file');
+				throw new \Exception('Not a valid icon file');
 			}
 		//	Create IconDirEntry
 			$iconDirEntry = new IconDirEntry();
