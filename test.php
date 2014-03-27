@@ -1,17 +1,7 @@
 <?php
 	
-//	Config
-	include_once('config.php');
-	
-//	Redirect all subdomains to www
-	//include_once('redirect_to_www.php');
-	
-//	Model autoloader
-	include_once('models/_autoload.php');
-	
-	
 //	Load Icons library
-	include_once('../3rdparty/Icons/icon.php');
+	include_once('./icon.php');
 	
 //	Load icon file
 	$icon = \Codefocus\Icons\Icon::createFromFile('test.ico');

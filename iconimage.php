@@ -56,7 +56,6 @@ class IconImage {
 	 *	
 	 */
 	public static function createFromIconDirEntry(IconDirEntry &$icondirentry, &$data) {
-		//echo '<pre style="text-align: left; background-color: #fff; color: #444; border: 1px solid #ccc;">'.print_r($icondirentry, true).'</pre>';
 	//	Unpack BITMAPINFOHEADER
 		$bitmapinfoheader	= unpack('Vsize/lwidth/lheight/vplanes/vbitcount/Vcompression/Vsizeimage/lxpelspermeter/lypelspermeter/Vclrused/Vclrimportant', $data);
 		if (1 !== $bitmapinfoheader['planes']) {
@@ -67,11 +66,14 @@ class IconImage {
 	//	All other members must be 0.
 	//	http://msdn.microsoft.com/en-us/library/ms997538.aspx
 		if (
-			0 !== $bitmapinfoheader['compression'] or
+			0 !== $bitmapinfoheader['compression']/* or
 			0 !== $bitmapinfoheader['xpelspermeter'] or
-			0 !== $bitmapinfoheader['ypelspermeter']/* or
+			0 !== $bitmapinfoheader['ypelspermeter'] or
 			0 !== $bitmapinfoheader['clrused'] or
 			0 !== $bitmapinfoheader['clrimportant']*/) {
+		//	...although,... we'll only check if compression is 0,
+		//	because there are a lot of "technically invalid" icons
+		//	out there, that can be rendered perfectly well.
 			throw new \Exception('Not a valid icon image');
 		}
 	//	Create IconImage object and populate it with the BITMAPINFOHEADER data.
@@ -89,48 +91,18 @@ class IconImage {
 		case 32:
 		//	32 bit color
 		//	------------
-		//	Get image data
-		
-		//	XOR (image) data
-			$image->pixels = $image->dataToRgbQuads(substr($data, $image->size), $image->bitcount);
-			
-		//	Determine the size of the AND mask
+		//	Get XOR (image) data
 			$sizePixels = $icondirentry->width * $icondirentry->height * ($icondirentry->bitcount/8);
-			$sizeAndMask = (strlen($data) - $image->size - $sizePixels);
-		//	AND mask width needs to be a mutiple of 32
-			$andMaskWidth = $icondirentry->width;
-			if (($andMaskWidth % 32) > 0) {
-				$andMaskWidth += (32 - ($icondirentry->width % 32));
-			}
-		//	AND (mask) data
+			$image->pixels = $image->dataToRgbQuads(substr($data, $image->size, $sizePixels), $image->bitcount);
+		//	Get AND (mask) data
 		//	for transparency
-			$andMaskData	= substr($data, $image->size + $sizePixels, $sizeAndMask);
-			$andBits		= '';
-			for($idx_mask_byte = 0; $idx_mask_byte < $sizeAndMask; ++$idx_mask_byte) {
-				$andBits .= str_pad(decbin(ord($andMaskData[$idx_mask_byte])), 8, '0', STR_PAD_LEFT);
-			}
-		//	Trim off useless bits
-			$andMaskLines = str_split($andBits, $andMaskWidth);
-			foreach($andMaskLines as &$andMaskLine) {
-				$andMaskLine = substr($andMaskLine, 0, $icondirentry->width);
-			}
-		//	Draw bottom up if BITMAPINFO $height is positive
-			if ($image->height > 0) {
-				$andMaskLines = array_reverse($andMaskLines);
-			}
-			
-			$image->andmask = $andMaskLines;
-			
-/*
-			$image->render();
-			exit();
-*/
+			$image->andmask = $image->dataToAndMask($data, $icondirentry);
 			break;
 			
 		case 24:
 		//	24 bit color
 		//	-----------------
-		//	Get image data
+		//	Get XOR (image) data
 			throw new \Exception('@TODO: createFromIconDirEntry 24-bit');
 			$image->pixels = $image->dataToRgbQuads(substr($data, $image->size), $image->bitcount);
 			$image->render();
@@ -143,6 +115,12 @@ class IconImage {
 			break;
 		
 		case 8:
+		//	8 bit palettized
+		//	----------------
+		//	Get XOR (image) data
+			echo '@TODO: 8 bit image!';
+			break;
+			
 		case 4:
 		//	Palettized image.
 		//	-----------------
@@ -152,9 +130,13 @@ class IconImage {
 			}
 			if ($icondirentry->colorcount) {
 			//	Get palette.
-				$image->palette = $image->dataToRgbQuads(substr($data, $image->size, $icondirentry->colorcount * 4), $image->bitcount);
+				$image->palette = $image->dataToRgbQuads(substr($data, $image->size, $icondirentry->colorcount * 4), 8);
 			//	Get image data
-				$image->pixels = $image->dataToPaletteEntries(substr($data, $image->size + count($image->palette) * 4), $image->palette);
+				$sizePixels = $icondirentry->width * $icondirentry->height * ($icondirentry->bitcount/8);
+				$image->pixels = $image->dataToPaletteEntries(substr($data, $image->size + count($image->palette) * 4, $sizePixels), $image->palette);
+			//	Get AND (mask) data
+			//	for transparency
+				$image->andmask = $image->dataToAndMask($data, $icondirentry);
 			}
 			break;
 			
@@ -200,14 +182,30 @@ class IconImage {
 		$rgbquads		= array();
 		$sizeof_data	= count($data_array);
 		
+		if ($bitcount < 24) {
+		//	Low image bitcount.
+		//	This is a request for palette entries (32 bit),
+		//	but we'll ignore the alpha value.
+			$bitcount = 32;
+			$isLowBitcount	= true;
+		}
+		else {
+			$isLowBitcount	= false;
+		}
+		
 		switch($bitcount) {
 		case 32:
 		//	32 bit
 			for($cursor = 0; $cursor <= $sizeof_data - 4; $cursor += 4) {
 				$rgba = array();
 				list($rgba['b'], $rgba['g'], $rgba['r'], $rgba['a']) = array_slice($data_array, $cursor, 4);
-			//	Invert alpha
-				$rgba['a'] = floor(128 - ($rgba['a'] / 2));
+				if (!$isLowBitcount) {
+				//	Invert alpha
+					$rgba['a'] = floor(128 - ($rgba['a'] / 2));
+				}
+				else {
+					$rgba['a'] = 0;
+				}
 				$rgbquads[] = $rgba;
 			}
 			break;
@@ -224,47 +222,16 @@ class IconImage {
 			}
 			break;
 			
-		case 8:
-			throw new \Exception('@TODO: 8-bit images');
-			break;
-			
-		case 4:
-			throw new \Exception('@TODO: 4-bit images');
-			break;
-		
-		case 1:
+		//	Lower bitcounts don't get RGBQuads.
+		//	They get palette entries.
 		default:
-			throw new \Exception('1 bit images not supported');
+			throw new \Exception('Invalid call to dataToRgbQuads');
 			break;
-			
-			
 			
 		}	//	switch bitcount
 		
 		return $rgbquads;
 	}	//	function dataToRgbQuads
-	
-	
-	/**
-	 *	Convert a data string to an array of RGB quads
-	 *	
-	 */
-/*
-	protected function dataToRgbQuadsViaPalette($data, array $palette) {
-	//	Unpack data
-		$data_array = $this->dataToPaletteEntries($data, $palette);
-	//	Convert palette entries to an array of RGB quads
-		$rgbquads		= array();
-		foreach($data_array as $data_byte) {
-			if (!isset($palette[$data_byte])) {
-				echo 'Palette entry '.$data_byte.' does not exist!<br />';
-				throw new \Exception('Palette entry does not exist');
-			}
-			$rgbquads[] = $palette[$data_byte];
-		}
-		return $rgbquads;
-	}	//	function dataToRgbQuadsViaPalette
-*/
 	
 	
 	/**
@@ -292,6 +259,35 @@ class IconImage {
 	}	//	function dataToPaletteEntries
 	
 	
+	protected function dataToAndMask(&$data, &$icondirentry) {
+	//	Determine the size of the image
+		$sizePixels		= $icondirentry->width * $icondirentry->height * ($icondirentry->bitcount / 8);
+	//	Determine the size of the AND mask
+		$sizeAndMask	= strlen($data) - $this->size - $sizePixels;
+	//	AND mask width needs to be a mutiple of 32
+		$andMaskWidth	= $icondirentry->width;
+		if (($andMaskWidth % 32) > 0) {
+			$andMaskWidth += (32 - ($icondirentry->width % 32));
+		}
+	//	Get AND mask data
+		$andMaskData	= substr($data, $this->size + $sizePixels, $sizeAndMask);
+		$andBits		= '';
+		for($idx_mask_byte = 0; $idx_mask_byte < $sizeAndMask; ++$idx_mask_byte) {
+			$andBits .= str_pad(decbin(ord($andMaskData[$idx_mask_byte])), 8, '0', STR_PAD_LEFT);
+		}
+	//	Trim off useless bits
+		$andMaskLines = str_split($andBits, $andMaskWidth);
+		foreach($andMaskLines as &$andMaskLine) {
+			$andMaskLine = substr($andMaskLine, 0, $icondirentry->width);
+		}
+	//	Draw bottom up if BITMAPINFO $height is positive
+		if ($this->height > 0) {
+			$andMaskLines = array_reverse($andMaskLines);
+		}
+		return $andMaskLines;
+	}	//	function dataToAndMask
+	
+	
 	/**
 	* Ico::AllocateColor()
 	* Allocate a color on $im resource. This function prevents
@@ -308,6 +304,7 @@ class IconImage {
 	* @return              integer               Color index
 	**/
 	protected function allocateColor(&$gdimage, $rgba) {
+		$rgba['a'] = 0;	//	@DEBUG. Will need to reverse in the functin that transforms data to palette
 		$color_in_palette = imagecolorexactalpha($gdimage, $rgba['r'], $rgba['g'], $rgba['b'], $rgba['a']);
 		if ($color_in_palette >= 0) {
 			return $color_in_palette;
@@ -325,10 +322,10 @@ class IconImage {
 	//	Create image
 		$gdimage = imagecreatetruecolor($this->icondirentry->width, $this->icondirentry->height);
 		imagesavealpha($gdimage, true);
-		
-	//	Fill with transparent color
+	//	Fill image with transparent color
 		$transparent = imagecolorallocatealpha($gdimage, 0, 0, 0, 127);
 		imagefill($gdimage, 0, 0, $transparent);
+	//	Allocate all palette colors if necessary
 		
 		if ($this->icondirentry->colorcount) {
 		//	Build palette
