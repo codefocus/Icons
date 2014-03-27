@@ -4,6 +4,9 @@ Icons
 Load Windows icon files in PHP.
 
 
+*NOTE: 24-bit and 1-bit images are being developed. This library is NOT production-ready*
+
+
 Requirements
 ------------
 

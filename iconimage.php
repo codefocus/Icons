@@ -12,7 +12,6 @@
 
 namespace Codefocus\Icons;
 
-
 class IconImage {
 //	BITMAPINFOHEADER
 	public $size;				//	DWORD			The number of bytes required by the structure.
@@ -24,18 +23,10 @@ class IconImage {
 								//					and its origin is the upper-left corner.
 	public $planes;				//	DWORD			The number of planes for the target device. Must be 1.
 	public $bitcount;			//	WORD			The number of bits-per-pixel, or 0 for JPG/PNG (not allowed in icons)
-	//public $compression;		//	DWORD			
 	public $sizeimage;			//	DWORD			The size, in bytes, of the image.
-	//public $xpelspermeter;		//	LONG			
-	//public $ypelspermeter;		//	LONG			
-	//public $clrused;			//	DWORD			
-	//public $clrimportant;		//	DWORD			
-
-//	ICONIMAGE
-	//	[bitmapinfoheader]
-	//public $xormask;			//	BYTE[]				DIB bits for XOR mask
-	public $andmask;			//	BYTE[]				DIB bits for AND mask
 	
+//	ICONIMAGE [bitmapinfoheader]
+	public $andmask;			//	BYTE[]				DIB bits for AND mask
 	
 	public $icondirentry;		//	IconDirEntry backreference
 	public $palette;			//	RGBQUAD[]			Palette
@@ -95,7 +86,7 @@ class IconImage {
 			$image->pixels = $image->dataToRgbQuads(substr($data, $image->size, $sizePixels), $image->bitcount);
 		//	Get AND (mask) data
 		//	for transparency
-			$image->andmask = $image->dataToAndMask($data, $icondirentry);
+			$image->andmask = $image->dataToAndMask($data);
 			break;
 			
 		case 24:
@@ -135,7 +126,7 @@ class IconImage {
 				$image->pixels = $image->dataToPaletteEntries(substr($data, $image->size + count($image->palette) * 4, $sizePixels), $image->palette);
 			//	Get AND (mask) data
 			//	for transparency
-				$image->andmask = $image->dataToAndMask($data, $icondirentry);
+				$image->andmask = $image->dataToAndMask($data);
 			}
 			break;
 			
@@ -258,15 +249,22 @@ class IconImage {
 	}	//	function dataToPaletteEntries
 	
 	
-	protected function dataToAndMask(&$data, &$icondirentry) {
+	/**
+	 * dataToAndMask function.
+	 * 
+	 * @access protected
+	 * @param mixed &$data
+	 * @return void
+	 */
+	protected function dataToAndMask(&$data) {
 	//	Determine the size of the image
-		$sizePixels		= $icondirentry->width * $icondirentry->height * ($icondirentry->bitcount / 8);
+		$sizePixels		= $this->icondirentry->width * $this->icondirentry->height * ($this->icondirentry->bitcount / 8);
 	//	Determine the size of the AND mask
 		$sizeAndMask	= strlen($data) - $this->size - $sizePixels;
 	//	AND mask width needs to be a mutiple of 32
-		$andMaskWidth	= $icondirentry->width;
+		$andMaskWidth	= $this->icondirentry->width;
 		if (($andMaskWidth % 32) > 0) {
-			$andMaskWidth += (32 - ($icondirentry->width % 32));
+			$andMaskWidth += (32 - ($this->icondirentry->width % 32));
 		}
 	//	Get AND mask data
 		$andMaskData	= substr($data, $this->size + $sizePixels, $sizeAndMask);
@@ -277,7 +275,7 @@ class IconImage {
 	//	Trim off useless bits
 		$andMaskLines = str_split($andBits, $andMaskWidth);
 		foreach($andMaskLines as &$andMaskLine) {
-			$andMaskLine = substr($andMaskLine, 0, $icondirentry->width);
+			$andMaskLine = substr($andMaskLine, 0, $this->icondirentry->width);
 		}
 	//	Draw bottom up if BITMAPINFO $height is positive
 		if ($this->height > 0) {
@@ -288,20 +286,13 @@ class IconImage {
 	
 	
 	/**
-	* Ico::AllocateColor()
-	* Allocate a color on $im resource. This function prevents
-	* from allocating same colors on the same pallete. Instead
-	* if it finds that the color is already allocated, it only
-	* returns the index to that color.
-	* It supports alpha channel.
-	*
-	* @param               resource    $im       Image resource
-	* @param               integer     $red      Red component
-	* @param               integer     $green    Green component
-	* @param               integer     $blue     Blue component
-	* @param   optional    integer     $alphpa   Alpha channel
-	* @return              integer               Color index
-	**/
+	 * allocateColor function.
+	 * 
+	 * @access protected
+	 * @param mixed &$gdimage
+	 * @param mixed $rgba
+	 * @return void
+	 */
 	protected function allocateColor(&$gdimage, $rgba) {
 		$rgba['a'] = 0;	//	@DEBUG. Will need to reverse in the functin that transforms data to palette
 		$color_in_palette = imagecolorexactalpha($gdimage, $rgba['r'], $rgba['g'], $rgba['b'], $rgba['a']);
@@ -325,7 +316,6 @@ class IconImage {
 		$transparent = imagecolorallocatealpha($gdimage, 0, 0, 0, 127);
 		imagefill($gdimage, 0, 0, $transparent);
 	//	Allocate all palette colors if necessary
-		
 		if ($this->icondirentry->colorcount) {
 		//	Build palette
 			$palette = array();
@@ -339,7 +329,6 @@ class IconImage {
 		$idx_pixel = 0;
 		for ($y = $this->icondirentry->height - 1; $y >= 0; --$y) {	//	bottom up if $height positive
 			for ($x = 0; $x < $this->icondirentry->width; ++$x) {	//	left to right
-				
 				
 				if (!empty($this->andmask) and !empty($this->andmask[$y][$x]) and '1' == $this->andmask[$y][$x]) {
 					++$idx_pixel;
@@ -383,14 +372,6 @@ class IconImage {
 			return $data;
 		}
 	}	//	function render
-	
-	
-	
-	/*
-		function export
-		//	32 bits: 4 bytes per pixel [ B | G | R | ALPHA ]
-		//	24 bits: 3 bytes per pixel [ B | G | R ]
-	*/
 	
 	
 }	//	class IconImage
