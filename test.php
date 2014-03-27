@@ -6,15 +6,15 @@
 //	Load icon file
 	$icon = \Codefocus\Icons\Icon::createFromFile('test.ico');
 	
-//	Preferences
-	$minWidth		= 16;
-	$minBitcount	= 8;
-	$maxWidth		= 64;
-	$maxBitcount	= 32;
-	
 //	Extract the preferred icon.
-	$image = $icon->getImage($minWidth, $minBitcount, $maxWidth, $maxBitcount);
+	$image = $icon->getImage(
+		16,  //  minimum width
+		4,   //  minimum bitcount
+		64,  //  maximum width
+		32   //  maximum bitcount
+	);
 	
+//	Render as PNG
 	$pngData = $image->renderPng();
 	header('Content-type: image/png');
 	echo $pngData;

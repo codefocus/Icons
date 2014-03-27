@@ -4,10 +4,9 @@
  *
  *	Load Windows icon files in PHP
  *
- *	LICENSE: https://creativecommons.org/licenses/by-sa/4.0/
  *
  *	@author     http://www.codefocus.ca/
- *	@license	https://creativecommons.org/licenses/by-sa/4.0/
+ *	@license	http://www.apache.org/licenses/LICENSE-2.0
  *	@version    0.1
  */
 
